@@ -22,16 +22,18 @@ class SceneCameraIntrinsicsPlugin(neon_player.Plugin):
         scene_camera_matrix, scene_distortion = get_scene_intrinsics(
             self.recording
         )
+        payload = {
+            "scene_camera_matrix_K": [
+                row.tolist() for row in scene_camera_matrix
+            ],
+            "scene_distortion_coefficients": scene_distortion.tolist(),
+        }
+        if self.recording.calibration is not None:
+            scene_extrinsics = self.recording.calibration.scene_extrinsics_affine_matrix
+            payload["scene_extrinsics_affine_matrix_4x4"] = [
+                row.tolist() for row in scene_extrinsics
+            ]
         intrinsics_file = destination / "scene_camera_intrinsics.json"
         with open(intrinsics_file, "w") as f:
-            json.dump(
-                {
-                    "scene_camera_matrix_K": [
-                        row.tolist() for row in scene_camera_matrix
-                    ],
-                    "scene_distortion_coefficients": scene_distortion.tolist(),
-                },
-                f,
-                indent=2,
-            )
+            json.dump(payload, f, indent=2)
         logging.info(f"Wrote {intrinsics_file}")
