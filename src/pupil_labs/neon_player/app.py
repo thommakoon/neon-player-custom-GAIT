@@ -38,6 +38,7 @@ from pupil_labs.neon_player.plugins import (
     fixations,  # noqa: F401
     gaze,  # noqa: F401
     imu,  # noqa: F401
+    scene_camera_intrinsics,  # noqa: F401
     scene_renderer,  # noqa: F401
     surface_tracking,  # noqa: F401
     video_exporter,  # noqa: F401
