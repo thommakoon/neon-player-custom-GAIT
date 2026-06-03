@@ -287,10 +287,12 @@ class EventsPlugin(neon_player.Plugin):
 
     def set_event_as_export_boundary(self, data_point, left: bool):
         current_export_window = self.app.get_export_window()
+        round_fn = np.floor if left else np.ceil
+        event_ts = int(round_fn(data_point[0]))
         if left:
-            new_window = (data_point[0], current_export_window[1])
+            new_window = (event_ts, current_export_window[1])
         else:
-            new_window = (current_export_window[0], data_point[0])
+            new_window = (current_export_window[0], event_ts)
         self.app.set_export_window(new_window)
 
     def _update_timeline_data(self, event_type: EventType) -> None:
@@ -321,7 +323,7 @@ class EventsPlugin(neon_player.Plugin):
         primary=True,
     )
     def event_types(self) -> list[EventType]:
-        return self._event_types
+        return list(self._event_types_by_name.values())
 
     @event_types.setter
     def event_types(self, value: list[EventType]) -> None:
