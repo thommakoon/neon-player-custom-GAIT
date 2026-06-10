@@ -175,10 +175,7 @@ class EventsPlugin(neon_player.Plugin):
         timeline = self.get_timeline()
         timeline.remove_timeline_plot("Events")
         for et in self._event_types:
-            timeline.remove_timeline_plot(f"Events - {et.name}")
-
-        for plot_name in IMMUTABLE_EVENTS:
-            timeline.remove_timeline_plot(f"Events - {plot_name}")
+            self._remove_gui_for_event_name(et.name)
 
     def _setup_gui_for_event_type(self, event_type: EventType) -> None:
         timeline = self.get_timeline()
@@ -213,9 +210,46 @@ class EventsPlugin(neon_player.Plugin):
                 f"Seek to this {event_type.name}",
                 self.seek_to_event_instance,
             )
+            self.register_data_point_action(
+                f"Events - {event_type.name}",
+                f"Set this {event_type.name} as the left export window boundary",
+                lambda dp: self.set_event_as_export_boundary(dp, left=True),
+            )
+            self.register_data_point_action(
+                f"Events - {event_type.name}",
+                f"Set this {event_type.name} as the right export window boundary",
+                lambda dp: self.set_event_as_export_boundary(dp, left=False),
+            )
 
         register_data_actions()
         event_type.name_changed.connect(lambda _, _2: register_data_actions())
+
+    def _remove_gui_for_event_name(
+        self,
+        event_name: str,
+        remove_add_action: bool = True
+    ) -> None:
+        timeline = self.get_timeline()
+        timeline.remove_timeline_plot(f"Events - {event_name}")
+        data_point_actions = [
+            f"Seek to this {event_name}",
+            f"Set this {event_name} as the left export window boundary",
+            f"Set this {event_name} as the right export window boundary",
+        ]
+        for action_name in data_point_actions:
+            timeline.unregister_data_point_action(
+                f"Events - {event_name}", action_name
+            )
+
+        if event_name in IMMUTABLE_EVENTS:
+            return
+
+        timeline.unregister_data_point_action(
+            f"Events - {event_name}", f"Delete {event_name} instance"
+        )
+        if remove_add_action:
+            self.unregister_timeline_action(f"Add Event/{event_name}")
+            self.app.main_window.remove_menu_if_empty("Timeline/Add Event")
 
     def add_event(self, event_type: EventType, ts: int | None = None) -> None:
         if self.recording is None:
@@ -250,6 +284,14 @@ class EventsPlugin(neon_player.Plugin):
 
     def seek_to_event_instance(self, data_point) -> None:
         self.app.seek_to(data_point[0])
+
+    def set_event_as_export_boundary(self, data_point, left: bool):
+        current_export_window = self.app.get_export_window()
+        if left:
+            new_window = (data_point[0], current_export_window[1])
+        else:
+            new_window = (current_export_window[0], data_point[0])
+        self.app.set_export_window(new_window)
 
     def _update_timeline_data(self, event_type: EventType) -> None:
         timeline = self.get_timeline()
@@ -313,18 +355,13 @@ class EventsPlugin(neon_player.Plugin):
             if removed_event_type.uid in self.events:
                 del self.events[removed_event_type.uid]
 
-            self.get_timeline().remove_timeline_plot(
-                f"Events - {removed_event_type.name}"
-            )
+            self._remove_gui_for_event_name(removed_event_type.name)
             self.save_cached_json("events.json", self.events)
-            self.app.main_window.unregister_action(
-                f"Timeline/Add Event/{removed_event_type.name}"
-            )
 
         self._event_types = value
 
     def _on_event_name_changed(self, old_name, new_name, event_type) -> None:
-        self.get_timeline().remove_timeline_plot(f"Events - {old_name}")
+        self._remove_gui_for_event_name(old_name, remove_add_action=False)
         self._update_timeline_data(event_type)
 
     def create_event_type(self, event_name: str) -> None:
@@ -375,7 +412,7 @@ class EventsPlugin(neon_player.Plugin):
     @action
     @action_params(compact=True, icon=QIcon(str(neon_player.asset_path("export.svg"))))
     def export(self, destination: Path = Path()):
-        start_time, stop_time = neon_player.instance().recording_settings.export_window
+        start_time, stop_time = self.app.get_export_window()
         event_names = []
         for uid in self.events:
             name = uid if uid in IMMUTABLE_EVENTS else self.get_event_type(uid).name

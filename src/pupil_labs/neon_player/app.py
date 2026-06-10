@@ -43,6 +43,7 @@ from pupil_labs.neon_player.plugins import (
     surface_tracking,  # noqa: F401
     video_exporter,  # noqa: F401
 )
+from pupil_labs.neon_player.history import RecordingHistory
 from pupil_labs.neon_player.settings import GeneralSettings, RecordingSettings
 from pupil_labs.neon_player.ui.main_window import MainWindow
 from pupil_labs.neon_player.ui.plugin_installation_dialog import (
@@ -52,6 +53,7 @@ from pupil_labs.neon_player.utilities import SlotDebouncer, clone_menu
 
 
 class NeonPlayerApp(QApplication):
+    export_window_changed = Signal(tuple[int, int])
     playback_state_changed = Signal(bool)
     position_changed = Signal(object)
     seeked = Signal(object)
@@ -82,11 +84,15 @@ class NeonPlayerApp(QApplication):
         self.recording: nr.NeonRecording | None = None
         self.playback_start_anchor = 0
         self.current_ts = 0
+        self.playback_speed_options = [
+            -4.0, -2.0, -1.0, -0.5, -0.25, -0.125, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0
+        ]
         self.playback_speed = 1.0
 
         self.settings = GeneralSettings()
         self.loading_recording = False
         self.recording_settings = None
+        self.recording_history = RecordingHistory()
 
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(1000 / 30)
@@ -132,6 +138,14 @@ class NeonPlayerApp(QApplication):
         except Exception:
             logging.exception("Failed to load settings")
 
+        try:
+            self.recording_history = RecordingHistory.from_dict(self.load_recording_history())
+        except FileNotFoundError:
+            logging.warning("Recording history file not found")
+        except Exception:
+            logging.exception("Failed to load recording history")
+        self.recording_history.changed.connect(self.save_history)
+
         if self.args.job and self.args.recording:
             self.load(Path(self.args.recording))
         elif self.args.recording:
@@ -173,6 +187,11 @@ class NeonPlayerApp(QApplication):
         logging.info(f"Loading settings from {settings_path}")
         return json.loads(settings_path.read_text())
 
+    def load_recording_history(self) -> T.Any:
+        history_path = Path.home() / "Pupil Labs" / "Neon Player" / "history.json"
+        logging.info(f"Loading recording history from {history_path}")
+        return json.loads(history_path.read_text())
+
     def save_settings(self) -> None:
         if self._initializing:
             return
@@ -197,6 +216,18 @@ class NeonPlayerApp(QApplication):
         except Exception:
             logging.exception("Failed to save settings")
             raise
+
+    def save_history(self) -> None:
+        try:
+            history_path = Path.home() / "Pupil Labs" / "Neon Player" / "history.json"
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            data = self.recording_history.recent_recordings
+            with history_path.open("w") as f:
+                json.dump(data, f, cls=ComplexEncoder)
+
+            logging.info("History saved")
+        except Exception:
+            logging.exception("Failed to save history")
 
     def find_plugins(self, path: Path) -> None:
         sys.path.append(str(path))
@@ -335,6 +366,8 @@ class NeonPlayerApp(QApplication):
         self.unload()
         logging.info("Opening recording at path: %s", path)
         self.recording = nr.load(path)
+        self.recording_history.add_recording(path, self.recording)
+
         os.chdir(path)
         self.playback_start_anchor = 0
 
@@ -350,21 +383,22 @@ class NeonPlayerApp(QApplication):
 
                 if len(self.recording_settings.export_window) != 2:
                     logging.warning("Invalid export window in settings")
-                    self.recording_settings.export_window = [
+                    self.recording_settings.export_window = (
                         self.recording.start_time,
                         self.recording.stop_time,
-                    ]
+                    )
 
             else:
                 self.recording_settings = RecordingSettings()
-                self.recording_settings.export_window = [
+                self.recording_settings.export_window = (
                     self.recording.start_time,
                     self.recording.stop_time,
-                ]
+                )
 
         except Exception:
             logging.exception("Failed to load settings")
             self.recording_settings = RecordingSettings()
+        self.recording_settings.export_window_changed.connect(self.export_window_changed.emit)
 
         logging.info(
             "Recording settings loaded", self.recording_settings.enabled_plugins
@@ -419,6 +453,15 @@ class NeonPlayerApp(QApplication):
         self.playback_speed = speed
         self._reset_start_anchor()
         self.speed_changed.emit(speed)
+
+    def switch_playback_speed(self, by: int) -> None:
+        current_idx = self.playback_speed_options.index(self.playback_speed)
+        new_idx = current_idx + by
+        if new_idx < 0 or new_idx >= len(self.playback_speed_options):
+            return
+
+        new_speed = self.playback_speed_options[new_idx]
+        self.set_playback_speed(new_speed)
 
     def _reset_start_anchor(self) -> None:
         if self.playback_speed == 0:
@@ -537,3 +580,21 @@ class NeonPlayerApp(QApplication):
     @property
     def is_playing(self) -> bool:
         return self.refresh_timer.isActive()
+
+    def get_export_window(self) -> tuple[int, int] | None:
+        if self.recording is None:
+            return None
+
+        return self.recording_settings.export_window
+
+    def set_export_window(self, export_window: tuple[int, int]) -> None:
+        if self.recording is None:
+            return
+
+        if not isinstance(export_window, tuple) or len(export_window) != 2:
+            raise ValueError(
+                "Export window must be a tuple with two integer timestamps (start, end)"
+            )
+
+        self.recording_settings.export_window = export_window
+        self.main_window.timeline.set_export_window(export_window)

@@ -161,7 +161,7 @@ class FixationsPlugin(neon_player.Plugin):
         self.unregister_action("Playback/Previous Fixation")
 
     def get_export_fixations(self) -> pd.DataFrame:
-        start_time, stop_time = neon_player.instance().recording_settings.export_window
+        start_time, stop_time = self.app.get_export_window()
         start_mask = self.recording.fixations.stop_time > start_time
         stop_mask = self.recording.fixations.start_time < stop_time
 
@@ -201,7 +201,7 @@ class FixationsPlugin(neon_player.Plugin):
         return export_data
 
     def get_export_saccades(self) -> pd.DataFrame:
-        start_time, stop_time = neon_player.instance().recording_settings.export_window
+        start_time, stop_time = self.app.get_export_window()
         start_mask = self.recording.saccades.stop_time > start_time
         stop_mask = self.recording.saccades.start_time < stop_time
 
@@ -265,6 +265,10 @@ class FixationsPlugin(neon_player.Plugin):
         gray_cache: dict[int, np.ndarray] = {}
         gray_cache_times: dict[int, int] = {}
 
+        # Use cache only for fixations below 5 s, corresponding to ~300 MB of
+        # grayscale video.
+        max_fixation_frames_to_cache = 5 * 30
+
         for fidx, fixation in enumerate(recording.fixations):
             stale_keys = [
                 k for k, t in gray_cache_times.items() if t < fixation.start_time
@@ -277,6 +281,9 @@ class FixationsPlugin(neon_player.Plugin):
                 (fixation.start_time <= gaze.time) & (gaze.time <= fixation.stop_time)
             ]
 
+            if not gaze_samples.size:
+                continue
+
             ref_gaze = gaze_samples[len(gaze_samples) // 2]
 
             start_scene_idx, stop_scene_idx = np.searchsorted(
@@ -286,6 +293,7 @@ class FixationsPlugin(neon_player.Plugin):
 
             if len(scene_frames) == 0:
                 continue
+            use_cache = len(scene_frames) <= max_fixation_frames_to_cache
 
             scene_frames_ts = [f.time for f in scene_frames]
             diff = np.abs(np.array(scene_frames_ts) - ref_gaze.time)
@@ -307,10 +315,10 @@ class FixationsPlugin(neon_player.Plugin):
                 current_img = start_img
 
                 for frame in frame_sequence:
-                    if frame.index not in gray_cache:
+                    if use_cache and frame.index not in gray_cache:
                         gray_cache[frame.index] = frame.gray
                         gray_cache_times[frame.index] = frame.time
-                    next_img = gray_cache[frame.index]
+                    next_img = gray_cache.get(frame.index, frame.gray)
                     if next_img is None:
                         break
 

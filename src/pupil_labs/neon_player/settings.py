@@ -91,16 +91,16 @@ class RecordingSettings(PersistentPropertiesMixin, QObject):
         super().__init__()
         self._enabled_plugins = neon_player.instance().settings.default_plugins.copy()
         self._plugin_states: dict[str, dict] = {}
-        self._export_window: list[int] = []
+        self._export_window: tuple[int, int] = ()
 
     @property
     @property_params(widget=None)
-    def export_window(self) -> list[int]:
+    def export_window(self) -> tuple[int, int]:
         return self._export_window
 
     @export_window.setter
-    def export_window(self, value: list[int]) -> None:
-        self._export_window = value.copy()
+    def export_window(self, value: tuple[int, int]) -> None:
+        self._export_window = value
         self.export_window_changed.emit()
         self.changed.emit()
 
@@ -121,13 +121,14 @@ class RecordingSettings(PersistentPropertiesMixin, QObject):
     @property_params(widget=None)
     def plugin_states(self) -> dict[str, dict]:
         app = neon_player.instance()
-        current_states = {
-            class_name: p.to_dict() for class_name, p in app.plugins_by_class.items()
-        }
+        if app.recording_settings == self:
+            current_states = {
+                class_name: p.to_dict() for class_name, p in app.plugins_by_class.items()
+            }
 
-        plugin_states = {**self._plugin_states, **current_states}
+            plugin_states = {**self._plugin_states, **current_states}
 
-        self._plugin_states = {k: v for k, v in plugin_states.items() if v}
+            self._plugin_states = {k: v for k, v in plugin_states.items() if v}
 
         return self._plugin_states
 

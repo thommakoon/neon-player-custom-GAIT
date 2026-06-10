@@ -44,6 +44,7 @@ uv run -m nuitka src/pupil_labs/neon_player \
     --include-module=unittest.mock \
     --include-module=http.cookies \
     --include-module=PySide6.QtOpenGL \
+    --include-module=tqdm.auto \
     --include-package-data=qt_property_widgets \
     --include-package=plistlib \
     --include-package=google.protobuf \
@@ -51,7 +52,8 @@ uv run -m nuitka src/pupil_labs/neon_player \
     --include-module=cmath \
     --include-module=zoneinfo \
     --include-module=av.sidedata.encparams \
-    --include-module=pandas._libs._cyutility
+    --include-module=pandas._libs._cyutility \
+    --include-qt-plugins=multimedia
 
 cp -r deployment/* dist/
 cd dist

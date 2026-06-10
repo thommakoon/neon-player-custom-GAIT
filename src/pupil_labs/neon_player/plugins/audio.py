@@ -28,6 +28,7 @@ class AudioPlugin(neon_player.Plugin):
         self.player.setAudioOutput(self.audio_output)
         self.player.mediaStatusChanged.connect(self.on_media_status_changed)
         self.recording_has_audio = False
+        self.has_audio_at_ts = False
 
         self.app.playback_state_changed.connect(self.on_playback_state_changed)
         self.app.seeked.connect(self.on_user_seeked)
@@ -57,23 +58,46 @@ class AudioPlugin(neon_player.Plugin):
         position = self.app.current_ts
         try:
             rel_time_ms = round((position - self.recording.audio.time[0]) / 1e6)
+
+            # Delay playback if the audio has not yet started, but will
+            # start eventually with the current playback speed
+            self.has_audio_at_ts = rel_time_ms >= 0
+            if not self.has_audio_at_ts and self.app.playback_speed > 0:
+                delay_ms = -rel_time_ms / self.app.playback_speed
+                QTimer.singleShot(delay_ms, self.sync_and_start_playback)
+                self.player.setPosition(0)
+                return
+
             self.player.setPosition(rel_time_ms)
-            self.player.setPlaybackRate(self.app.playback_speed)
         except StreamNotFound:
             pass
 
     def on_speed_changed(self, speed: float) -> None:
-        self.sync_position()
+        # NOTE: On MacOS, setting negative playback rates often leads to a bus error
+        # and crashes the application. To prevent this, we stop playback instead of
+        # setting a negative playback rate.
+        if self.app.playback_speed > 0:
+            self.player.setPlaybackRate(self.app.playback_speed)
+        else:
+            self.player.stop()
+
+        # Restart playback if it was previously paused due to negative playback speed
+        # and now has a positive speed
+        self.sync_and_start_playback()
 
     def on_user_seeked(self, position: int) -> None:
         self.sync_position()
 
     def on_playback_state_changed(self, is_playing: bool) -> None:
-        if is_playing and self.app.playback_speed > 0:
-            self.sync_position()
-            self.player.play()
+        if is_playing:
+            self.sync_and_start_playback()
         else:
             self.player.stop()
+
+    def sync_and_start_playback(self):
+        self.sync_position()
+        if self.has_audio_at_ts and self.app.is_playing and self.app.playback_speed > 0:
+            self.player.play()
 
     def on_recording_loaded(self, recording: NeonRecording) -> None:
         self.recording_has_audio = False
