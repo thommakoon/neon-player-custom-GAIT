@@ -31,11 +31,11 @@ if ($LASTEXITCODE -eq 0) {
     } else {
         Write-Host "Name is free (redirects to $($repo.name))."
         Write-Host "Creating fork $ForkName from $Upstream ..."
-        gh repo fork $Upstream --fork-name $ForkName --remote=false
+        gh repo fork $Upstream --fork-name $ForkName
     }
 } else {
     Write-Host "Creating fork $ForkName from $Upstream ..."
-    gh repo fork $Upstream --fork-name $ForkName --remote=false
+    gh repo fork $Upstream --fork-name $ForkName
 }
 
 Write-Host "Setting origin to fork ..."
