@@ -28,6 +28,10 @@ class IMUPlugin(neon_player.Plugin):
         except AssertionError:
             return
 
+        # Euler angles from quat: seq="yxz" (intrinsic). Yaw (3rd angle) is rotation
+        # about Z. In a right-hand frame with Z up: positive yaw = head turn LEFT,
+        # negative yaw = head turn RIGHT. For VOR vs gaze azimuth (positive=right),
+        # use -yaw so head-right matches positive and compensatory eye-left is negative.
         rotations = Rotation.from_quat(recording.imu.rotation)
         eulers = rotations.as_euler(seq="yxz", degrees=True)
 
