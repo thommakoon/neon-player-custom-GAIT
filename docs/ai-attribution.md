@@ -51,4 +51,4 @@ Example methods sentence:
 
 > Code and analysis scripts were developed with assistance from Cursor (AI-assisted
 > IDE); AI-assisted commits are marked with `Co-authored-by: Cursor
-> <cursoragent@cursor.com>` in version control.
+<cursoragent@cursor.com>` in version control.
